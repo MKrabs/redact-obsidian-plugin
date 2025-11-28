@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "minAppVersion": "0.15.0",
   "description": "Integrates the 'redact' CLI tool into Obsidian. Redact files via context menu and view replacement logs.",
-  "author": "Your Name",
+  "author": "Mkrabs",
   "authorUrl": "https://github.com/MKrabs/redact-tool",
   "isDesktopOnly": true
 }

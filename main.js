@@ -1,40 +1,36 @@
-import { App, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile, Notice, FileSystemAdapter, Modal, ButtonComponent } from 'obsidian';
-import * as child_process from 'child_process';
-import * as path from 'path';
+const {
+    Plugin,
+    PluginSettingTab,
+    Setting,
+    TFile,
+    Notice,
+    FileSystemAdapter,
+    Modal,
+    ButtonComponent
+} = require('obsidian');
+const child_process = require('child_process');
+const path = require('path');
 
-// Interface for Plugin Settings
-interface RedactPluginSettings {
-    cliPath: string;
-    profile: string;
-    enableLog: boolean;
-    customArgs: string;
-}
-
-const DEFAULT_SETTINGS: RedactPluginSettings = {
-    cliPath: '/usr/local/bin/redact', // Default install location from README
+const DEFAULT_SETTINGS = {
+    cliPath: '/usr/local/bin/redact',
     profile: 'default',
     enableLog: true,
     customArgs: ''
-}
+};
 
-export default class RedactPlugin extends Plugin {
-    settings: RedactPluginSettings;
-
+module.exports = class RedactPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
 
-        // Add settings tab
         this.addSettingTab(new RedactSettingTab(this.app, this));
 
-        // Register the Right-Click Menu Event
         this.registerEvent(
-            this.app.workspace.on('file-menu', (menu, file: TAbstractFile) => {
-                // Only add option for files, not folders
+            this.app.workspace.on('file-menu', (menu, file) => {
                 if (file instanceof TFile) {
                     menu.addItem((item) => {
                         item
                             .setTitle('Redact File')
-                            .setIcon('shield-alert') // Appropriate icon for redaction
+                            .setIcon('shield-alert')
                             .onClick(async () => {
                                 await this.redactFile(file);
                             });
@@ -44,7 +40,8 @@ export default class RedactPlugin extends Plugin {
         );
     }
 
-    async redactFile(file: TFile) {
+// javascript
+    async redactFile(file) {
         const adapter = this.app.vault.adapter;
 
         if (!(adapter instanceof FileSystemAdapter)) {
@@ -52,34 +49,55 @@ export default class RedactPlugin extends Plugin {
             return;
         }
 
-        // Get absolute path to the file
         const basePath = adapter.getBasePath();
         const absolutePath = path.join(basePath, file.path);
 
-        // Construct the command based on settings
-        // Usage: redact <file> --profile <name> [--log] [other args]
-        const profileFlag = this.settings.profile ? `--profile "${this.settings.profile}"` : '';
-        const logFlag = this.settings.enableLog ? '--log' : '';
+        const profileFlag = this.settings.profile
+                            ? `--profile ${this.settings.profile}`
+                            : '';
+        const logFlag = this.settings.enableLog
+                        ? '--log'
+                        : '';
+        const customArgs = this.settings.customArgs || '';
 
-        const command = `"${this.settings.cliPath}" "${absolutePath}" ${profileFlag} ${logFlag} ${this.settings.customArgs}`;
+        // Build a single shell command string and run with spawn(..., { shell: true })
+        const command = `${this.settings.cliPath} "${absolutePath}" ${profileFlag} ${logFlag} ${customArgs}`.trim();
 
         new Notice(`Running Redact Tool on: ${file.name}`);
 
-        // Execute the CLI tool
-        child_process.exec(command, (error, stdout, stderr) => {
-            // Strip ANSI color codes from output for display in Obsidian
-            // The tool uses colors (Features: "Colorized Output"), which look like garbage characters in raw text.
-            // Regex to remove CSI (Control Sequence Introducer) codes
-            const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
-            const cleanStderr = stderr.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+        const proc = child_process.spawn(command, { shell: true });
 
-            if (error) {
-                console.error(`Redact Tool Error: ${error.message}`);
-                new RedactResultModal(this.app, "Redaction Failed", error.message + "\n" + cleanStderr).open();
+        let stdout = '';
+        let stderr = '';
+
+        if (proc.stdout) {
+            proc.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+        }
+
+        if (proc.stderr) {
+            proc.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+        }
+
+        proc.on('error', (error) => {
+            console.error(`Redact Tool Error: ${error.message}`);
+            const cleanStderr = (stderr || '').replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+            new RedactResultModal(this.app, "Redaction Failed", error.message + "\n" + cleanStderr).open();
+        });
+
+        proc.on('close', (code) => {
+            const cleanStdout = (stdout || '').replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+            const cleanStderr = (stderr || '').replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+
+            if (code !== 0) {
+                console.error(`Redact Tool exited with code ${code}`);
+                new RedactResultModal(this.app, "Redaction Failed", `Exit code: ${code}\n${cleanStderr}`).open();
                 return;
             }
 
-            // If success, show the log
             console.log(`Redact Tool Stdout: ${cleanStdout}`);
 
             if (this.settings.enableLog) {
@@ -97,35 +115,37 @@ export default class RedactPlugin extends Plugin {
     async saveSettings() {
         await this.saveData(this.settings);
     }
-}
 
-/**
- * Modal to display the output/log from the Redact CLI
- */
+    onunload() {
+    }
+};
+
 class RedactResultModal extends Modal {
-    title: string;
-    message: string;
-
-    constructor(app: App, title: string, message: string) {
+    constructor(app, title, message) {
         super(app);
         this.title = title;
         this.message = message;
     }
 
     onOpen() {
-        const { contentEl } = this;
+        const {contentEl} = this;
 
-        contentEl.createEl('h2', { text: this.title });
+        contentEl.createEl('h2', {text: this.title});
 
-        // Use a pre-formatted block to preserve spacing of the log table
         const codeBlock = contentEl.createEl('pre');
-        codeBlock.createEl('code', { text: this.message });
+        codeBlock.createEl('code', {text: this.message});
 
-        // Add a close button
         new ButtonComponent(contentEl)
             .setButtonText("Close")
             .onClick(() => {
                 this.close();
+            });
+
+        const copyButton = new ButtonComponent(contentEl)
+            .setButtonText("Copy Logs")
+            .onClick(() => {
+                navigator.clipboard.writeText(this.message);
+                new Notice("Logs copied to clipboard.");
             });
     }
 
@@ -135,19 +155,17 @@ class RedactResultModal extends Modal {
 }
 
 class RedactSettingTab extends PluginSettingTab {
-    plugin: RedactPlugin;
-
-    constructor(app: App, plugin: RedactPlugin) {
+    constructor(app, plugin) {
         super(app, plugin);
         this.plugin = plugin;
     }
 
-    display(): void {
-        const { containerEl } = this;
+    display() {
+        const {containerEl} = this;
 
         containerEl.empty();
 
-        containerEl.createEl('h2', { text: 'Redact Tool Settings' });
+        containerEl.createEl('h2', {text: 'Redact Tool Settings'});
 
         new Setting(containerEl)
             .setName('CLI Executable Path')

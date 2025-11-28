@@ -1,0 +1,18 @@
+/* Style for the log output in the modal */
+.redact-log-output {
+    background-color: var(--background-secondary);
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: var(--font-monospace);
+    font-size: 0.9em;
+    white-space: pre-wrap; /* Wrap long lines */
+}
+
+.redact-modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
